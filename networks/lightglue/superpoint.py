@@ -307,17 +307,26 @@ class SuperPoint(BaseModel):
             keypoints = [torch.flip(k, [1]).float() for k in keypoints]
 
             if self.conf.force_num_keypoints:
+                # Calculate bounds safely to avoid negative tensor shapes in ONNX
+                image_size = data.get("image_size", torch.tensor(image.shape[-2:]))
+                if isinstance(image_size, torch.Tensor) and image_size.numel() > 0:
+                    # Ensure bounds are positive and valid
+                    min_size = image_size.min().item()
+                    max_bound = max(min_size, 1)  # Ensure at least 1
+                else:
+                    # Fallback to image dimensions
+                    max_bound = max(image.shape[-2:])
+                
+                # Additional safety check for ONNX compatibility
+                if max_bound <= 0:
+                    max_bound = 1
+                
                 keypoints = pad_and_stack(
                     keypoints,
                     max_kps,
                     -2,
                     mode="random_c",
-                    bounds=(
-                        0,
-                        data.get("image_size", torch.tensor(image.shape[-2:]))
-                        .min()
-                        .item(),
-                    ),
+                    bounds=(0, max_bound),
                 )
                 scores = pad_and_stack(scores, max_kps, -1, mode="zeros")
             else:
